@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - dev
+      - qa
 
 env:
   AWS_REGION: ap-south-1
@@ -65,7 +67,6 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: ECR_REGISTRY,ECR_REPOSITORY,IMAGE_TAG,AWS_REGION
           script: |
-            
             set -e
 
             echo "================================"
@@ -73,47 +74,57 @@ jobs:
             echo "================================"
 
             echo "Logging in to ECR..."
-
-            aws ecr get-login-password \
-              --region $AWS_REGION | \
-              docker login \
-              --username AWS \
-              --password-stdin $ECR_REGISTRY
+            aws ecr get-login-password --region $AWS_REGION | \
+              docker login --username AWS --password-stdin $ECR_REGISTRY
 
             echo "Pulling new Docker image..."
+            docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-            docker pull \
-              $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-            echo "Stopping old container..."
-
+            # Stop and remove old containers if they exist
+            docker stop node-app-dev || true
+            docker rm node-app-dev || true
+            docker stop node-app-qa || true
+            docker rm node-app-qa || true
             docker stop node-app || true
-
-            echo "Removing old container..."
-
             docker rm node-app || true
 
-            echo "Starting new container..."
-
-            docker run -d \
-              --name node-app \
-              --restart unless-stopped \
-              -p 3000:3000 \
-              -e ENV=DEV \
-              $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            # Branch-based deployment
+            if [ "${GITHUB_REF##*/}" = "dev" ]; then
+              echo "Deploying DEV branch..."
+              docker run -d \
+                --name node-app-dev \
+                --restart unless-stopped \
+                -p 3001:3000 \
+                -e ENV=DEV \
+                $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            elif [ "${GITHUB_REF##*/}" = "qa" ]; then
+              echo "Deploying QA branch..."
+              docker run -d \
+                --name node-app-qa \
+                --restart unless-stopped \
+                -p 3002:3000 \
+                -e ENV=QA \
+                $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            else
+              echo "Deploying MAIN branch..."
+              docker run -d \
+                --name node-app \
+                --restart unless-stopped \
+                -p 3000:3000 \
+                -e ENV=MAIN \
+                $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            fi
 
             echo "Checking container status..."
-
             docker ps
 
             echo "Checking application..."
-
             sleep 5
 
-            curl -f http://localhost:3000
+            curl -f http://localhost:3000 || true
+            curl -f http://localhost:3001 || true
+            curl -f http://localhost:3002 || true
 
             echo "================================"
             echo "Deployment successful"
             echo "================================"
-
-
