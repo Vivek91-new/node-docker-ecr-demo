@@ -7,7 +7,7 @@ const server = http.createServer((req, res) => {
     "Content-Type": "text/html"
   });
 
-  res.end(`<h1>Hello it Campus Guru Again</h1>`);
+  res.end(`<h1>Hello ECR-Docker</h1>`);
 });
 
 server.listen(PORT, "0.0.0.0", () => {
